@@ -28,9 +28,9 @@ class OutputExtractor:
         match = re.search(f'<{tag}>(.*?)</{tag}>', text, re.DOTALL)
         return match.group(1) if match else ""
     
-
-class InvokationClient:
-    """Class that handles different patterns of calling an LLM"""
+CLASS_NAME="InvokationCore" # used in logger, abstracted for easier change
+class InvokationCore:
+    """Core LLM calling patterns to build more complex invokation patterns"""
     def __init__(self, provider:Groq, extractor:OutputExtractor):
         """
         Initializes an LLM client
@@ -55,13 +55,13 @@ class InvokationClient:
         Returns:
             str: The response from the language model.
         """
-        logger.info(f"[InvokationClient.invoke] - Invoking model: {model}")
-        logger.info(f"[InvokationClient.invoke] - Prompt: {prompt}")
+        logger.info(f"[{CLASS_NAME}.invoke] - Invoking model: {model}")
+        logger.info(f"[{CLASS_NAME}.invoke] - Prompt: {prompt}")
         messages = [
         {"role": "system", "content":system_prompt},
         {"role": "user", "content": prompt}
         ]
-        logger.debug(f"[InvokationClient.invoke] - Messages: {str(messages)}")
+        logger.debug(f"[{CLASS_NAME}.invoke] - Messages: {str(messages)}")
 
         response = self.client.chat.completions.create(
             model=model,
@@ -70,7 +70,7 @@ class InvokationClient:
             temperature=0.2,
         )
         response_content = response.choices[0].message.content
-        logger.info(f"[InvokationClient.invoke] - Response: {response_content}")
+        logger.info(f"[{CLASS_NAME}.invoke] - Response: {response_content}")
         return response_content 
     
     def invoke_with_chain(self, input:str, prompts:List[str]) -> str:
@@ -85,14 +85,41 @@ class InvokationClient:
             results (str): Final results from running the prompt chain
         """
         result = input
+        logger.debug(f"[{CLASS_NAME}.invoke_with_chain] - Initial Chain Input: {result}")
+
         for i, prompt in enumerate(prompts, 1):
+            logger.debug(f"[{CLASS_NAME}.invoke_with_chain] - Prompt for step {i}: {prompt}")
             result = self.invoke(f"{prompt}\nInput: {result}")
 
+            if i == len(prompts)-1: 
+                logger.debug(f"[{CLASS_NAME}.invoke_with_chain] - Final Chain Result: {result}")
+            else: 
+                logger.debug(f"[{CLASS_NAME}.invoke_with_chain] - Result after step {i}: {result}")
+            
+        return result
+
     def invoke_with_parallel(self, prompt:str, inputs:List[str], n_workers:int = 3) -> List[str]:
-        ...
-    
-    def invoke_with_router(self, input:str, routes: Dict[str, str]) -> str:
         """
+        Process multiple inputs concurrently with the same prompt.
+
+        Args:
+            prompt (str): Prompt used to process a list of inputs
+            inputs (list[str]): List of inputs to process with the defined prompt
+            n_workers (int): Number of workers to parallelize with
+        
+        Returns:
+            results (list[str]): A list of results corresponding to the inputs
+        """
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(self.invoke, f"{prompt}\nInput: {x}") 
+                for x in inputs
+                ]
+            return [f.result() for f in futures]
+    
+    def invoke_with_router(self, input:str, selection_prompt:str, routes: Dict[str, str]) -> str:
+        """
+        TODO: I don't like the selection prompt logic being outside of the function since it is core to the functions success.
         Route specific input to a specialized prompt using content classification.
 
         Args:
@@ -100,8 +127,26 @@ class InvokationClient:
             routes (dict[str,str]):\n
                 Key - Route type / Category\n
                 Value - Prompt detailing how to handle requests to this route
+        
+        Returns:
+            results (str): Results from routed llm call
         """
-        ...
+        logger.debug(f"[{CLASS_NAME}.invoke_with_router] - Available routes: {list(routes.keys())}")
+
+        full_prompt = selection_prompt + f"\nInput:{input}".strip()
+
+        route_response = self.invoke(full_prompt)
+        reasoning = self.extractor.extract_xml(route_response, 'reasoning')
+        route_key = self.extractor.extract_xml(route_response, 'selection').strip().lower()
+
+        logger.debug(f"[{CLASS_NAME}.invoke_with_router] - Routing Reasoning: {reasoning}")
+        logger.debug(f"[{CLASS_NAME}.invoke_with_router] - Routing Selection: {route_key}")
+
+        selected_prompt = routes[route_key]
+        result = self.invoke(selected_prompt)
+        logger.debug(f"[{CLASS_NAME}.invoke_with_router] - Routing Outcome: {result}")
+
+        return result
 
     def invoke_with_eval_loop(self, task:str, generator_prompt:str, evaluator_promt:str, max_iter:int=5) -> tuple[str, list[dict]]:
         """
@@ -125,6 +170,7 @@ class InvokationClient:
         for _ in range(max_iter):
             evaluation, feedback = self.__eval_loop_evaluation(evaluator_promt, result, task)
             if evaluation == "PASS":
+                logger.debug(f"[{CLASS_NAME}.invoke_with_eval_loop] - Final Result on 'PASS': {result}")
                 return result, chain_of_thought
 
             # Generate context to join previous attempts with feedback
@@ -139,6 +185,7 @@ class InvokationClient:
 
         
         # Returns result and chain of though of final generation regardless of pass
+        logger.debug(f"[{CLASS_NAME}.invoke_with_eval_loop] - Final Result on limit: {result}")
         return result, chain_of_thought
 
 
@@ -162,6 +209,9 @@ class InvokationClient:
         response = self.invoke(full_prompt)
         thoughts = self.extractor.extract_xml(response, "thoughts")
         result = self.extractor.extract_xml(response, "response")
+
+        logger.debug(f"[{CLASS_NAME}.__eval_loop_generation] - Evaluation thought: {thoughts}")
+        logger.debug(f"[{CLASS_NAME}.__eval_loop_generation] - Evaluation result: {result}")
         
         return result, thoughts
 
@@ -184,6 +234,9 @@ class InvokationClient:
         response = self.invoke(full_prompt)
         evaluation = self.extractor.extract_xml(response, "evaluation")
         feedback = self.extractor.extract_xml(response, "feedback")
+
+        logger.debug(f"[{CLASS_NAME}.__eval_loop_evaluation] - Evaluation Outcome: {evaluation}")
+        logger.debug(f"[{CLASS_NAME}.__eval_loop_evaluation] - Evaluation Feedback: {feedback}")
         
         return evaluation, feedback
 
@@ -195,4 +248,4 @@ if __name__ == "__main__":
     extractor = OutputExtractor()
 
 
-    llm = InvokationClient(provider=groq, extractor=extractor)
+    llm = InvokationCore(provider=groq, extractor=extractor)
