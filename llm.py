@@ -40,8 +40,8 @@ class InvokationCore:
 
         Note: Currently only supports Groq as an LLM provider
         """
-        self.client:Groq               = provider()
-        self.extractor:OutputExtractor = extractor()
+        self.client:Groq = provider
+        self.extractor:OutputExtractor = extractor
     
     def invoke(self, prompt:str, system_prompt:str="", model="meta-llama/llama-4-scout-17b-16e-instruct"):
         """

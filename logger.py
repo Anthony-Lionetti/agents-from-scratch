@@ -9,7 +9,7 @@ Path("logs").mkdir(exist_ok=True)
 
 PRODUCTION_CONFIG = {
     'version': 1,  # Required - specifies config format version
-    'disable_existing_loggers': False,  # Keep existing loggers active
+    'disable_existing_loggers': True,  # Keep existing loggers active
     
     # FORMATTERS - Define how log messages look
     'formatters': {
@@ -182,7 +182,7 @@ PRODUCTION_CONFIG = {
 # DEBUG CONFIGURATION
 DEBUG_CONFIG = {
     'version': 1,
-    'disable_existing_loggers': False,
+    'disable_existing_loggers': True,
     
     'formatters': {
         'debug': {

@@ -6,6 +6,12 @@ dist/
 wheels/
 *.egg-info
 
+# logs
+logs/
+
+# Output Files
+output/
+
 # Notebooks
 notebooks/
 *.ipynb
