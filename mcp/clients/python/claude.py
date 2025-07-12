@@ -4,8 +4,12 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from typing import List, Dict, TypedDict
 from contextlib import AsyncExitStack
+import logger
 import json
 import asyncio
+
+# setup loggering
+logger = logger.setup_logging(environment='dev')
 
 load_dotenv()
 
@@ -42,7 +46,9 @@ class MCP_ChatBot:
             # List available tools for this session
             response = await session.list_tools()
             tools = response.tools
-            print(f"\nConnected to {server_name} with tools:", [t.name for t in tools])
+
+            logger.debug(f"[MCP_ChatBot.connect_to_server] - Connected to {server_name}")
+            logger.debug(f"[MCP_ChatBot.connect_to_server] - With tools {[t.name for t in tools]}")
             
             for tool in tools: # new
                 self.tool_to_session[tool.name] = session
@@ -52,10 +58,10 @@ class MCP_ChatBot:
                     "input_schema": tool.inputSchema
                 })
         except Exception as e:
-            print(f"Failed to connect to {server_name}: {e}")
+            logger.error(f"[MCP_ChatBot.connect_to_server] - Failed to connect to {server_name}: {e}")
 
     async def connect_to_servers(self): # new
-        """Connect to all configured MCP servers."""
+        """Connect to all configured MCP servers via server_config.json file."""
         try:
             with open("server_config.json", "r") as file:
                 data = json.load(file)
@@ -65,25 +71,38 @@ class MCP_ChatBot:
             for server_name, server_config in servers.items():
                 await self.connect_to_server(server_name, server_config)
         except Exception as e:
-            print(f"Error loading server configuration: {e}")
+            logger.error(f"[MCP_ChatBot.connect_to_servers] - Error loading server config: {e}")
             raise
     
     async def process_query(self, query):
+        logger.info(f"[MCP_ChatBot.process_query] - Processing Query: {query}")
         messages = [{'role':'user', 'content':query}]
         response = self.anthropic.messages.create(max_tokens = 2024,
                                       model = 'claude-3-7-sonnet-20250219', 
                                       tools = self.available_tools,
                                       messages = messages)
+
+        logger.debug(f"[MCP_ChatBot.process_query] - Initial query raw response: {response}")
+
         process_query = True
         while process_query:
             assistant_content = []
+
+
+            logger.debug(f"[MCP_ChatBot.process_query] - Response content: {response.content}\n\n")
             for content in response.content:
+                logger.debug(f"[MCP_ChatBot.process_query] - Current content: {content}")
+                
+
                 if content.type =='text':
                     print(content.text)
                     assistant_content.append(content)
                     if(len(response.content) == 1):
                         process_query= False
+
                 elif content.type == 'tool_use':
+                    logger.debug(f"[MCP_ChatBot.process_query] - Current content: {content}")
+
                     assistant_content.append(content)
                     messages.append({'role':'assistant', 'content':assistant_content})
                     tool_id = content.id
@@ -91,7 +110,8 @@ class MCP_ChatBot:
                     tool_name = content.name
                     
     
-                    print(f"Calling tool {tool_name} with args {tool_args}")
+                    logger.debug(f"[MCP_ChatBot.process_query] - Calling tool: {tool_name}")
+                    logger.debug(f"[MCP_ChatBot.process_query] - Tool args: {tool_args}")
                     
                     # Call a tool
                     session = self.tool_to_session[tool_name] # new
@@ -110,15 +130,18 @@ class MCP_ChatBot:
                                       tools = self.available_tools,
                                       messages = messages) 
                     
+                    logger.debug(f"[MCP_ChatBot.process_query] - Raw response: {response}")
+
                     if(len(response.content) == 1 and response.content[0].type == "text"):
-                        print(response.content[0].text)
+                        logger.debug(f"[MCP_ChatBot.process_query] - Response text: {response.content[0].text}")
                         process_query= False
 
     
     
     async def chat_loop(self):
         """Run an interactive chat loop"""
-        print("\nMCP Chatbot Started!")
+        logger.info(f"[MCP_ChatBot.chat_loop] - MCP Chatbot Started!")
+
         print("Type your queries or 'quit' to exit.")
         
         while True:
