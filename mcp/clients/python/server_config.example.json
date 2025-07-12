@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "weather": {
+      "command": "uv",
+      "args": ["--directory", "path/to/server", "run", "weather.py"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/ant-lion/Desktop/Projects/agent_playground/logs"
+      ]
+    }
+  }
+}
