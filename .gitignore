@@ -6,6 +6,12 @@ dist/
 wheels/
 *.egg-info
 
+# claude client configuration
+server_config.json
+
+# node modules
+node_modules/
+
 # logs
 logs/
 

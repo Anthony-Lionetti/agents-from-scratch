@@ -6,7 +6,7 @@ import os
 
 dotenv.load_dotenv()
 
-def main():
+def basic_llm_call():
     llm_provider = Groq(api_key=os.getenv("GROQ_API_KEY"))
     llm = InvokationCore(provider=llm_provider, extractor=OutputExtractor())
 
@@ -21,11 +21,7 @@ def main():
     with open("output/results.md", "w+") as f:
         f.write(result)
 
-    
-
-if __name__ == "__main__":
-    # main()
-
+def building_a_prompt():
     from prompts.util import format_md_prompt
     import datetime as dt
     date = dt.datetime.now().strftime("%m/%d/%Y")
@@ -33,3 +29,9 @@ if __name__ == "__main__":
     path = "prompts/research_lead.md"
     prompt = format_md_prompt(path=path, current_date=date)
     print(prompt)
+
+    
+
+if __name__ == "__main__":
+    basic_llm_call()
+    # building_a_prompt()
