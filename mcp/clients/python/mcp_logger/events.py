@@ -19,8 +19,6 @@ class EventType(str, Enum):
 class ContentType(str, Enum):
     """
     Types of content blocks. Can be `text`, `tool_use`, or `tool_result`
-
-    TODO: Extend this in the future to capture images and other types of content
     """
     TEXT = "text"
     TOOL_USE = "tool_use"

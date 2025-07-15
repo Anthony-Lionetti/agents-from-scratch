@@ -11,12 +11,27 @@ from rich.columns import Columns
 from rich.align import Align
 from typing import List, Dict, Optional, Set
 from datetime import datetime, timedelta
+from pydantic import ValidationError
 import time
 
 from .events import (
     MCPEvent, EventType, Role, ContentType, ConversationSummary,
     ContentBlock, ToolExecution
 )
+
+
+def _get_enum_value(enum_value):
+    """
+    Helper function to safely get enum values.
+    Handles both cases where the value is already a string (due to Pydantic use_enum_values=True)
+    and where it's still an enum instance.
+    """
+    if isinstance(enum_value, str):
+        return enum_value
+    elif hasattr(enum_value, 'value'):
+        return enum_value.value
+    else:
+        return str(enum_value)
 
 
 class MCPDisplayConfig:
@@ -27,7 +42,7 @@ class MCPDisplayConfig:
         show_timestamps: bool = True,
         show_token_counts: bool = True,
         show_content_preview: bool = True,
-        max_content_preview_length: int = 80,
+        max_content_preview_length: int = 800,
         auto_scroll: bool = True,
         color_theme: str = "default"
     ):
@@ -178,10 +193,17 @@ class MCPTerminalDisplay:
         Returns:
             Rich Panel containing the formatted event
         """
+        # First validate the MCP event is properly formatted
+        try:
+            event = MCPEvent.model_validate(event)
+        except ValidationError as e:
+            print(f'Error: {str(e)}')
+
         # Determine the main content
         if event.role:
-            role_color = self.colors.get(event.role.value, 'white')
-            role_text = f"[{role_color}]{event.role.value.upper()}[/]"
+            role_value = _get_enum_value(event.role)
+            role_color = self.colors.get(role_value, 'white')
+            role_text = f"[{role_color}]{role_value.upper()}[/]"
         else:
             role_text = f"[{self.colors['system']}]SYSTEM[/]"
         
@@ -194,11 +216,12 @@ class MCPTerminalDisplay:
         
         if event.content_block:
             block = event.content_block
-            content_type_color = self.colors.get(block.content_type.value, 'white')
+            content_type_value = _get_enum_value(block.content_type)
+            content_type_color = self.colors.get(content_type_value, 'white')
             token_count = self._format_token_count(block.token_usage.estimated_tokens)
             
             # Content type and tokens
-            content_header = f"[{content_type_color}]{block.content_type.value.upper()}[/] {token_count}"
+            content_header = f"[{content_type_color}]{content_type_value.upper()}[/] {token_count}"
             
             # Content preview
             if block.content_type == ContentType.TEXT:
@@ -239,7 +262,8 @@ class MCPTerminalDisplay:
         
         else:
             # Event without content block
-            event_type_text = event.event_type.value.replace('_', ' ').title()
+            event_type_value = _get_enum_value(event.event_type)
+            event_type_text = event_type_value.replace('_', ' ').title()
             content_lines.append(f"  ℹ️  {event_type_text}")
         
         # Combine header and content
@@ -249,7 +273,7 @@ class MCPTerminalDisplay:
             full_content = header
         
         # Create panel with appropriate border color
-        border_style = self.colors.get(event.role.value if event.role else 'system', 'white')
+        border_style = self.colors.get(_get_enum_value(event.role) if event.role else 'system', 'white')
         
         return Panel(
             full_content,

@@ -69,20 +69,33 @@ class MCP_ChatBot:
             raise
     
     async def process_query(self, query):
+
+        # Take user query and generate assistant response
         messages = [{'role':'user', 'content':query}]
-        response = self.groq.meGroq()
-                                      model = 'claude-3-7-sonnet-20250219', 
-                                      tools = self.available_tools,
-                                      messages = messages)
+        response = self.groq.chat.completions.create(
+                                        messages=messages,
+                                        tools=self.available_tools,
+                                        model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                                    )
+        
         process_query = True
         while process_query:
+            # define list of assistant content
             assistant_content = []
-            for content in response.content:
-                if content.type =='text':
-                    print(content.text)
-                    assistant_content.append(content)
+
+            # The types from Anthropic's API to Groqs differs here
+            for choice in response.choices:
+                response_role = choice.message.role 
+                response_content = choice.message.content
+
+                # The types / tool use is passed as a role
+                if response_role in ['system', 'user', 'assistant']:
+                    print(f"[MCP_ChatBot.process_query] - Message content: {response_content}")
+
+                    assistant_content.append(response_content)
                     if(len(response.content) == 1):
                         process_query= False
+
                 elif content.type == 'tool_use':
                     assistant_content.append(content)
                     messages.append({'role':'assistant', 'content':assistant_content})
@@ -96,19 +109,19 @@ class MCP_ChatBot:
                     # Call a tool
                     session = self.tool_to_session[tool_name] # new
                     result = await session.call_tool(tool_name, arguments=tool_args)
-                    messages.append({"role": "user", 
+                    messages.append({"role": "tool", 
                                       "content": [
                                           {
-                                              "type": "tool_result",
                                               "tool_use_id":tool_id,
                                               "content": result.content
                                           }
                                       ]
                                     })
-                    response = self.groq.meGroq()
-                                      model = 'claude-3-7-sonnet-20250219', 
-                                      tools = self.available_tools,
-                                      messages = messages) 
+                    response = self.groq.chat.completions.create(
+                                        messages=messages,
+                                        tools=self.available_tools,
+                                        model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                                        )
                     
                     if(len(response.content) == 1 and response.content[0].type == "text"):
                         print(response.content[0].text)

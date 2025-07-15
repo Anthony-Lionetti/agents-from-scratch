@@ -35,7 +35,7 @@ Perfect for:
 
 ```bash
 # Install required dependencies
-pip install rich pydantic anthropic mcp
+uv add rich pydantic anthropic mcp
 
 # Clone/download the mcp_logger package to your project
 ```
