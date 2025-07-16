@@ -259,10 +259,39 @@ class MCPChatBotWrapper:
         
         return events
     
+    def _parse_mcp_content_blocks(self, content_blocks: List) -> str:
+        """
+        Parse MCP content blocks and extract the actual content.
+        
+        Args:
+            content_blocks: List of MCP content blocks (TextContent, ImageContent, etc.)
+            
+        Returns:
+            Parsed content as a string
+        """
+        parsed_content = []
+        
+        for block in content_blocks:
+            if hasattr(block, 'type') and hasattr(block, 'text'):
+                # TextContent block
+                if block.type == 'text':
+                    parsed_content.append(block.text)
+            elif hasattr(block, 'type') and hasattr(block, 'data'):
+                # ImageContent or other data blocks
+                if block.type == 'image':
+                    parsed_content.append(f"[Image: {getattr(block, 'mimeType', 'unknown format')}]")
+                else:
+                    parsed_content.append(f"[{block.type.title()} Content]")
+            else:
+                # Fallback for unknown content types
+                parsed_content.append(str(block))
+        
+        return '\n'.join(parsed_content)
+
     def _create_tool_result_event(
         self,
         tool_id: str,
-        result_content: List[ContentBlock],
+        result_content: List,
         message_id: str,
         success: bool = True,
         error_message: Optional[str] = None
@@ -271,6 +300,10 @@ class MCPChatBotWrapper:
         
         # Get the original tool execution
         tool_execution = self.logger.active_tool_executions.get(tool_id)
+        
+        # Parse the content blocks properly
+        parsed_content = self._parse_mcp_content_blocks(result_content)
+        
         if tool_execution:
             # Update tool execution with results
             tool_execution.end_time = datetime.now()
@@ -279,14 +312,13 @@ class MCPChatBotWrapper:
             ).total_seconds()
             tool_execution.success = success
             tool_execution.error_message = error_message
-            tool_execution.result_content = str(result_content)
+            tool_execution.result_content = parsed_content
         
         # Create content block for the result
-        raw_content = str(result_content)
         content_block = create_content_block(
             block_index=0,  # Tool results are typically single blocks
             content_type=ContentType.TOOL_RESULT,
-            raw_content=raw_content,
+            raw_content=parsed_content,
             tool_execution=tool_execution
         )
         

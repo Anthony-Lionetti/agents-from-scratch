@@ -9,7 +9,8 @@ from rich.tree import Tree
 from rich.rule import Rule
 from rich.columns import Columns
 from rich.align import Align
-from typing import List, Dict, Optional, Set
+from rich.markdown import Markdown
+from typing import List, Dict, Optional, Set, Union
 from datetime import datetime, timedelta
 from pydantic import ValidationError
 import time
@@ -160,15 +161,15 @@ class MCPTerminalDisplay:
             return f"[{self.colors['tokens']}]({tokens} tokens)[/]"
         return ""
     
-    def _format_content_preview(self, content: str) -> str:
+    def _format_content_preview(self, content: str) -> Union[str, Markdown]:
         """
-        Format content preview with length limit.
+        Format content preview with length limit and markdown rendering.
         
         Args:
             content: The content to preview
             
         Returns:
-            Formatted and truncated content preview
+            Markdown object for rich rendering or plain string
         """
         if not self.config.show_content_preview:
             return ""
@@ -179,9 +180,8 @@ class MCPTerminalDisplay:
         else:
             preview = content
         
-        # Escape Rich markup and replace newlines
-        preview = preview.replace("[", r"\[").replace("\n", " ")
-        return f'"{preview}"'
+        # Return as Markdown object for Rich to render
+        return Markdown(preview)
     
     def _create_message_panel(self, event: MCPEvent) -> Panel:
         """
@@ -228,7 +228,12 @@ class MCPTerminalDisplay:
                 preview = self._format_content_preview(block.raw_content)
                 content_lines.append(f"  📝 {content_header}")
                 if preview:
-                    content_lines.append(f"     {preview}")
+                    # For markdown content, we need to handle it differently
+                    if isinstance(preview, Markdown):
+                        content_lines.append("     ")  # Add spacing
+                        content_lines.append(preview)  # Add the markdown object directly
+                    else:
+                        content_lines.append(f"     {preview}")
             
             elif block.content_type == ContentType.TOOL_USE:
                 if block.tool_execution:
@@ -253,10 +258,18 @@ class MCPTerminalDisplay:
                     # Show result preview or error
                     if block.tool_execution.success and block.tool_execution.result_content:
                         result_preview = self._format_content_preview(block.tool_execution.result_content)
-                        content_lines.append(f"     Result: {result_preview}")
+                        if isinstance(result_preview, Markdown):
+                            content_lines.append("     Result:")
+                            content_lines.append(result_preview)
+                        else:
+                            content_lines.append(f"     Result: {result_preview}")
                     elif block.tool_execution.error_message:
                         error_preview = self._format_content_preview(block.tool_execution.error_message)
-                        content_lines.append(f"     [red]Error: {error_preview}[/red]")
+                        if isinstance(error_preview, Markdown):
+                            content_lines.append("     [red]Error:[/red]")
+                            content_lines.append(error_preview)
+                        else:
+                            content_lines.append(f"     [red]Error: {error_preview}[/red]")
                 else:
                     content_lines.append(f"  📄 {content_header}")
         
@@ -266,9 +279,16 @@ class MCPTerminalDisplay:
             event_type_text = event_type_value.replace('_', ' ').title()
             content_lines.append(f"  ℹ️  {event_type_text}")
         
-        # Combine header and content
+        # Combine header and content, handling mixed string/Markdown content
         if content_lines:
-            full_content = header + "\n" + "\n".join(content_lines)
+            # Create a group to handle mixed content types
+            content_parts = [header]
+            for line in content_lines:
+                if isinstance(line, Markdown):
+                    content_parts.append(line)
+                else:
+                    content_parts.append(line)
+            full_content = Group(*content_parts)
         else:
             full_content = header
         
@@ -370,7 +390,7 @@ class MCPTerminalDisplay:
         self.live_display = Live(
             self._create_layout(),
             console=self.console,
-            refresh_per_second=1,  # Reduced from 4 to 1 for less visual noise
+            refresh_per_second=1,  
             auto_refresh=True,
             screen=False
         )
