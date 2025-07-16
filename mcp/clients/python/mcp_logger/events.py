@@ -160,7 +160,8 @@ def create_content_block(
     block_index: int,
     content_type: ContentType,
     raw_content: str,
-    tool_execution: Optional[ToolExecution] = None
+    tool_execution: Optional[ToolExecution] = None,
+    preview_length: Optional[int] = None
 ) -> ContentBlock:
     """
     Create a ContentBlock with automatic token estimation and content preview.
@@ -175,6 +176,7 @@ def create_content_block(
         raw_content: The full content text to be processed
         tool_execution: Optional tool execution details if this block represents
                        a tool use or tool result
+        preview_length: Optional count to truncate content to a fixed preview length
     
     Returns:
         ContentBlock: A fully populated content block with token estimation
@@ -189,9 +191,14 @@ def create_content_block(
         24
     """
     # Create preview (first 100 chars)
-    content_preview = raw_content[:100]
-    if len(raw_content) > 100:
-        content_preview += "..."
+    if not preview_length:
+        content = raw_content[:100]
+        if len(raw_content) > 100:
+            content += "..."
+    else:
+        content = raw_content
+
+
     
     # Estimate tokens
     estimated_tokens = estimate_tokens_from_text(raw_content)
@@ -203,7 +210,7 @@ def create_content_block(
     return ContentBlock(
         block_index=block_index,
         content_type=content_type,
-        content_preview=content_preview,
+        content_preview=content,
         raw_content=raw_content,
         token_usage=token_usage,
         tool_execution=tool_execution

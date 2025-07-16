@@ -157,7 +157,7 @@ class MCPChatBotWrapper:
         self.display: Optional[MCPTerminalDisplay] = None
         if show_display:
             self.display = create_display(display_config)
-        
+                
         # Conversation tracking
         self.current_conversation_id: Optional[str] = None
         self.message_counter = 0
@@ -166,7 +166,10 @@ class MCPChatBotWrapper:
         """Event callback to update the display."""
         if self.display:
             self.display.add_event(event)
-            self.display.update_display()
+            # Only update display if live display is active
+            # This prevents interference with static display in chat loop
+            if self.display.live_display:
+                self.display.update_display()
     
     def _generate_conversation_id(self) -> str:
         """Generate a unique conversation ID."""
@@ -579,7 +582,9 @@ class MCPChatBotWrapper:
             
             for content in response.content:
                 if content.type == 'text':
-                    print(content.text)
+                    if self.display is None:
+                        print("\n===\n", "🤖 Assistant: ", content.text, "\n===\n")
+
                     assistant_content.append(content)
                     if len(response.content) == 1:
                         process_query = False
@@ -667,7 +672,9 @@ class MCPChatBotWrapper:
                         for event in final_events:
                             self.logger.log_event(event)
                         
-                        print(response.content[0].text)
+                        if self.display is None: # if no display, print assistant response
+                            print(response.content[0].text)
+
                         process_query = False
     
     def start_conversation(self) -> str:
@@ -708,7 +715,7 @@ class MCPChatBotWrapper:
     async def chat_loop(self) -> None:
         """Run an interactive chat loop with logging and display."""
         print("🤖 MCP Chatbot with Logging Started!")
-        print("Type your queries or 'quit' to exit.\n")
+        print("Type your queries or 'quit' to exit, or 'clear' to clear screen.\n")
         
         try:
             while True:
@@ -716,45 +723,43 @@ class MCPChatBotWrapper:
                 if self.display and self.display.live_display:
                     self.display.stop_live_display()
                 
-                # Clear screen and show current state
+                # Show current state at the beginning of each turn
                 if self.display:
                     self.display.console.clear()
+                    
+                    # Display summary panel at the top
                     self.display.print_summary()
                     self.display.print_separator()
-
-                    ## Trying to isoltate issues ##
-                    try:
-                        events_trunc = self.display.events[-5:]
-                    except Exception as e:
-                        print("Yup that was the issue!")
-                        events_trunc = self.display.events
-                    ## Trying to isoltate issues ##
-
                     
-                    # Show recent events
-                    recent_events = events_trunc if self.display.events else []
-                    for event in recent_events:
-                        self.display.print_event(event)
-                    
-                    if recent_events:
+                    # Show recent conversation events (last 15 for better readability)
+                    if self.display.events:
+                        recent_events = self.display.events[-15:]  # Limit to last 15 events
+                        for event in recent_events:
+                            self.display.print_event(event)
                         self.display.print_separator()
                 
                 # Get user input
                 query = input("🤖 Query: ").strip()
                 
-                if query.lower() == 'quit':
+                # Handle special commands
+                if query.lower() in ['quit', 'exit']:
                     break
+                elif query.lower() == 'clear':
+                    # Clear screen and reset events display
+                    if self.display:
+                        self.display.console.clear()
+                    continue
                 
-                # Start live display for processing the user query
-                # This will run throughout the entire query processing including tool executions
-                if self.display:
-                    self.display.start_live_display()
+                # Skip empty queries
+                if not query:
+                    continue
                 
-                await self.process_query(query)
-                
-                # Stop live display after query processing is complete
-                if self.display and self.display.live_display:
-                    self.display.stop_live_display()
+                # Process query with minimal display interference
+                try:
+                    await self.process_query(query)
+                except Exception as query_error:
+                    print(f"Error processing query: {query_error}")
+                    # Continue the loop instead of crashing
                 
         except KeyboardInterrupt:
             print("\nExiting...")
@@ -763,6 +768,7 @@ class MCPChatBotWrapper:
         finally:
             self.end_conversation()
             if self.display:
+                self.display.print_summary()
                 self.display.stop_live_display()
     
     async def cleanup(self) -> None:

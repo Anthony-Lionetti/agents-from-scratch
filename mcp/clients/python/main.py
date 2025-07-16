@@ -11,7 +11,7 @@ async def main():
         show_timestamps=True,
         show_token_counts=True,
         show_content_preview=True,
-        max_content_preview_length=80
+        max_content_preview_length=1000
     )
 
     # Create wrapper with logging

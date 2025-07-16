@@ -1,4 +1,4 @@
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 from rich.table import Table
@@ -332,18 +332,24 @@ class MCPTerminalDisplay:
         
         # Split into header and main content
         layout.split_column(
-            Layout(name="header", size=3),
+            Layout(name="header"),
             Layout(name="main")
         )
         
         # Header contains the summary
         layout["header"].update(self._create_summary_panel())
         
-        # Main content shows recent events
-        recent_events = self.events[-10:]  # Show last 10 events
+        # Main content shows recent events (reduced to prevent truncation)
+        recent_events = self.events[-8:]  # Show last 8 events to prevent overflow
         if recent_events:
-            panels = [self._create_message_panel(event) for event in recent_events]
-            main_content = Align.left(Columns(panels, expand=True))
+            # Create a simpler vertical display of events
+            content_parts = []
+            for event in recent_events:
+                panel = self._create_message_panel(event)
+                content_parts.append(panel)
+            
+            # Create a group of panels for vertical stacking
+            main_content = Group(*content_parts)
         else:
             main_content = Align.center("Waiting for MCP events...", vertical="middle")
         
@@ -364,7 +370,7 @@ class MCPTerminalDisplay:
         self.live_display = Live(
             self._create_layout(),
             console=self.console,
-            refresh_per_second=4,
+            refresh_per_second=1,  # Reduced from 4 to 1 for less visual noise
             auto_refresh=True,
             screen=False
         )
