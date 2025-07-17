@@ -98,8 +98,8 @@ class MCP_ChatBot:
         process_query = True
         while process_query:
             response_message = response.choices[0].message
-            tool_names = [call.function.name for call in response_message.tool_calls]
-            logger.debug(f"[MCP_ChatBot.process_query] - Response content: {response_message} {"| Tools" + tool_names if tool_names else ""}\n\n")
+            tool_names = [call.function.name for call in response_message.tool_calls] if response_message.tool_calls else []
+            logger.debug(f"[MCP_ChatBot.process_query] - Response content: Role = {response_message.role} | Content = {response_message.content} {"| Tools " + str(tool_names) if tool_names else ""}\n\n")
 
             # Process the Assistant response
             for choice in response.choices:
