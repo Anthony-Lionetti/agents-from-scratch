@@ -4,8 +4,11 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from typing import List, Dict, TypedDict
 from contextlib import AsyncExitStack
+import logger
 import json
 import asyncio
+
+logger = logger.setup_logging(environment='dev')
 
 load_dotenv()
 
@@ -42,17 +45,28 @@ class MCP_ChatBot:
             # List available tools for this session
             response = await session.list_tools()
             tools = response.tools
-            print(f"\nConnected to {server_name} with tools:", [t.name for t in tools])
+
+            logger.debug(f"[MCP_ChatBot.connect_to_server] - Connected to {server_name}")
+            logger.debug(f"[MCP_ChatBot.connect_to_server] - With tools {[t.name for t in tools]}")
             
             for tool in tools: # new
                 self.tool_to_session[tool.name] = session
+                
                 self.available_tools.append({
+                    "type": "function",
+                    "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "input_schema": tool.inputSchema
+                    "parameters": {
+                        "type": tool.inputSchema['type'],
+                        "properties": tool.inputSchema['properties']
+                    },
+                    "requried": tool.inputSchema['required']
+                    }
                 })
+            
         except Exception as e:
-            print(f"Failed to connect to {server_name}: {e}")
+            logger.error(f"[MCP_ChatBot.connect_to_server] - Failed to connect to {server_name}: {e}")
 
     async def connect_to_servers(self): # new
         """Connect to all configured MCP servers."""
@@ -65,67 +79,78 @@ class MCP_ChatBot:
             for server_name, server_config in servers.items():
                 await self.connect_to_server(server_name, server_config)
         except Exception as e:
-            print(f"Error loading server configuration: {e}")
+            logger.error(f"[MCP_ChatBot.connect_to_servers] - Error loading server config: {e}")
             raise
     
     async def process_query(self, query):
+        logger.info(f"[MCP_ChatBot.process_query] - Processing Query: {query}")
 
         # Take user query and generate assistant response
         messages = [{'role':'user', 'content':query}]
         response = self.groq.chat.completions.create(
                                         messages=messages,
                                         tools=self.available_tools,
-                                        model="meta-llama/llama-4-maverick-17b-128e-instruct"
+                                        model="meta-llama/llama-4-scout-17b-16e-instruct"
                                     )
+        
+        logger.debug(f"[MCP_ChatBot.process_query] - Initial query raw response: {response}")
         
         process_query = True
         while process_query:
-            # define list of assistant content
-            assistant_content = []
+            response_message = response.choices[0].message
+            tool_names = [call.function.name for call in response_message.tool_calls]
+            logger.debug(f"[MCP_ChatBot.process_query] - Response content: {response_message} {"| Tools" + tool_names if tool_names else ""}\n\n")
 
-            # The types from Anthropic's API to Groqs differs here
+            # Process the Assistant response
             for choice in response.choices:
-                response_role = choice.message.role 
+                logger.debug(f"[MCP_ChatBot.process_query] - Current choice: {choice}")
+
+                # Get text content from assistant response
                 response_content = choice.message.content
+                messages.append({'role':'assistant', 'content':response_content})
 
-                # The types / tool use is passed as a role
-                if response_role in ['system', 'user', 'assistant']:
-                    print(f"[MCP_ChatBot.process_query] - Message content: {response_content}")
+                # Get tool use invokations from assistant response
+                tool_calls = choice.message.tool_calls
 
-                    assistant_content.append(response_content)
-                    if(len(response.content) == 1):
-                        process_query= False
+                ####
+                # Process each tool call
+                if tool_calls is not None:
+                    for tool_call in tool_calls:
+                        logger.debug(f"[MCP_ChatBot.process_query] - Tool Details: {tool_call}\n")
+                        tool_name = tool_call.function.name
+                        tool_args:object = json.loads(tool_call.function.arguments)
+                    
+                        logger.debug(f"[MCP_ChatBot.process_query] - Calling tool: {tool_name}")
+                        logger.debug(f"[MCP_ChatBot.process_query] - Tool args: {tool_args}")
+                        
+                        # Call a tool
+                        session = self.tool_to_session[tool_name] # new
+                        # Await result of tool call
+                        result = await session.call_tool(tool_name, arguments=tool_args)
 
-                elif content.type == 'tool_use':
-                    assistant_content.append(content)
-                    messages.append({'role':'assistant', 'content':assistant_content})
-                    tool_id = content.id
-                    tool_args = content.input
-                    tool_name = content.name
-                    
-    
-                    print(f"Calling tool {tool_name} with args {tool_args}")
-                    
-                    # Call a tool
-                    session = self.tool_to_session[tool_name] # new
-                    result = await session.call_tool(tool_name, arguments=tool_args)
-                    messages.append({"role": "tool", 
-                                      "content": [
-                                          {
-                                              "tool_use_id":tool_id,
-                                              "content": result.content
-                                          }
-                                      ]
-                                    })
-                    response = self.groq.chat.completions.create(
-                                        messages=messages,
-                                        tools=self.available_tools,
-                                        model="meta-llama/llama-4-maverick-17b-128e-instruct"
-                                        )
-                    
-                    if(len(response.content) == 1 and response.content[0].type == "text"):
-                        print(response.content[0].text)
-                        process_query= False
+                        # Append tool call to chat history
+                        messages.append(
+                            {
+                                "tool_call_id": tool_call.id, 
+                                "role": "tool", # Indicates this message is from tool use
+                                "name": tool_name,
+                                "content": result.content
+                            }
+                        )
+
+                # generate next response 
+                response = self.groq.chat.completions.create(
+                                    messages=messages,
+                                    tools=self.available_tools,
+                                    model="meta-llama/llama-4-scout-17b-16e-instruct"
+                                    )
+            
+                logger.debug(f"[MCP_ChatBot.process_query] - Raw response: {response}")
+                
+                if len(response.choices[0].message.tool_calls) == 0:
+                    logger.debug(f"[MCP_ChatBot.process_query] - Response text: {response.choices[0].message.content}")
+                    print(response.choices[0].message.content)
+                    process_query= False
 
     
     
