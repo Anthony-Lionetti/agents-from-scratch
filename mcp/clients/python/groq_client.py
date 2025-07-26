@@ -138,18 +138,18 @@ class MCP_ChatBot:
                             }
                         )
 
-                # generate next response 
-                response = self.groq.chat.completions.create(
-                                    messages=messages,
-                                    tools=self.available_tools,
-                                    model="meta-llama/llama-4-scout-17b-16e-instruct"
-                                    )
-            
-                logger.debug(f"[MCP_ChatBot.process_query] - Raw response: {response}")
+                    # generate next response 
+                    response = self.groq.chat.completions.create(
+                                        messages=messages,
+                                        tools=self.available_tools,
+                                        model="meta-llama/llama-4-scout-17b-16e-instruct"
+                                        )
                 
-                if len(response.choices[0].message.tool_calls) == 0:
-                    logger.debug(f"[MCP_ChatBot.process_query] - Response text: {response.choices[0].message.content}")
-                    print(response.choices[0].message.content)
+                    logger.debug(f"[MCP_ChatBot.process_query] - Assistant Response after tool calls: {response}")
+                    
+                if response.choices[0].message.tool_calls is None:
+                    logger.debug(f"[MCP_ChatBot.process_query] - Final Response to User Query: {response.choices[0].message.content}")
+                    # print(response.choices[0].message.content)
                     process_query= False
 
     
